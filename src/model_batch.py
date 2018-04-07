@@ -52,26 +52,27 @@ class SpatialAttentionLayer(nn.Module):
 
     def forward(self, lstm_hidden, cnn_feat):
         '''
-        lstm_hidden: (bs, lstm_hidden_size)
-        cnn_feat: (bs, grid_num, cnn_feat_size)
+        lstm_hidden: (bs, ts, lstm_hidden_size)
+        cnn_feat: (bs, ts, grid_num, cnn_feat_size)
         zi = wh * tanh(Wv * V + Wg * H)
         weight : ai = sigmoid(zi)
         '''
         bs = cnn_feat.size()[0]         #normally should be 1
+        ts = cnn_feat.size()[1]
         # 7*7=49, corresponding to the size of CNN output feature size
-        grid_num = cnn_feat.size()[1]
+        grid_num = cnn_feat.size()[2]
         print("grid num")
         print(grid_num)
         weight = []
         for i in range(grid_num):
             H = self.linear_lstm(lstm_hidden)
-            V = self.linear_cnn(cnn_feat[:,i,:])
+            V = self.linear_cnn(cnn_feat[:,:,i,:])
             feat_sum = H + V
-            feat_sum = F.tanh(feat_sum)                 # (bs, projected_size)
-            feat_sum = self.linear_weight(feat_sum)     # (bs, 1)
+            feat_sum = F.tanh(feat_sum)                 # (bs, ts, projected_size)
+            feat_sum = self.linear_weight(feat_sum)     # (bs, ts, 1)
             weight.append(feat_sum)
-        weight = torch.cat(weight, dim=0)               # (bs * grid_num)
-        spatial_weight = F.softmax(weight.view(bs, grid_num), dim=1)
+        weight = torch.cat(weight, dim=0)               # (bs * ts* grid_num)
+        spatial_weight = F.softmax(weight.view(bs, ts, grid_num), dim=2)
         return spatial_weight
 
 class TemporalAttentionLayer(nn.Module):

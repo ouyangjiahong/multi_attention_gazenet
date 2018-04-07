@@ -20,7 +20,7 @@ def main():
     # arch = 'vgg16'
     extractor_model = FeatureExtractor(arch=arch)
     extractor_model.features = torch.nn.DataParallel(extractor_model.features)
-    # extractor_model.cuda()      # uncomment this line if using cpu
+    extractor_model.cuda()      # uncomment this line if using cpu
     extractor_model.eval()
 
     # pre-processing for the image, should add data generator loader here
@@ -40,25 +40,24 @@ def main():
     # test spatial attention layer
     spatial_attention_layer = SpatialAttentionLayer(lstm_hidden_size = 64,
                                 cnn_feat_size = 256, projected_size = 64)
-    # spatial_attention_layer.cuda()
+    spatial_attention_layer.cuda()
     spatial_attention_layer.train()
 
-    lstm_hidden = torch.randn(bs, 64)
-    # lstm_hidden = torch.randn(bs, 64).cuda()
+    lstm_hidden = torch.randn(bs, ts, 64).cuda()
     lstm_hidden_var = torch.autograd.Variable(lstm_hidden)
-    spatial_weight = spatial_attention_layer(lstm_hidden_var, cnn_feat_var[:,0,:,:])
-    print("spatial weight")         # (bs, grid_num)
+    spatial_weight = spatial_attention_layer(lstm_hidden_var, cnn_feat_var)
+    print("spatial weight")         # (bs, ts, grid_num)
     print(spatial_weight.size())
-    print(spatial_weight.sum(dim=1))
-    spatial_feat_var = cnn_feat_var * spatial_weight.unsqueeze(3)   # (bs, 256, 36)
-    spatial_feat_var = spatial_feat_var.sum(2)      # (bs, 256)
+    # print(spatial_weight.sum(dim=2))
+    spatial_feat_var = cnn_feat_var * spatial_weight.unsqueeze(3)   # (bs, ts, 256, 36)
+    spatial_feat_var = spatial_feat_var.sum(2)      # (bs, ts, 256)
     print("spatial feat")
     print(spatial_feat_var.size())
 
     # test temporal attention layer, loop for each bach
     temporal_attention_layer = TemporalAttentionLayer(lstm_hidden_size = 64,
                                 spatial_feat_size = 256, projected_size = 32)
-    # temporal_attention_layer.cuda()
+    temporal_attention_layer.cuda()
     temporal_attention_layer.train()
 
     t_cnt = 0
@@ -66,17 +65,26 @@ def main():
         if t_cnt >= ts:         # in real-time, don't know the time steps
             print("finish the interaction")
             break
-        lstm_hidden = torch.randn(bs, 64)
         lstm_hidden = torch.randn(bs, 64).cuda()    # should be h[t-1]
         lstm_hidden_var = torch.autograd.Variable(lstm_hidden)
         temporal_weight = temporal_attention_layer(lstm_hidden_var, spatial_feat_var[:,t_cnt,:])
         print("temporal weight")         # (bs)
         print(temporal_weight.size())
-        temporal_feat_var = spatial_feat_var * temporal_weight.unsqueeze(2)
-        print("temporal feat")
-        print(temporal_feat_var.size())
-        # print(temporal_weight.sum(dim=1))
         t_cnt += 1
+
+
+
+    lstm_hidden = torch.randn(bs, ts, 64).cuda()
+    lstm_hidden_var = torch.autograd.Variable(lstm_hidden)
+    temporal_weight = temporal_attention_layer(lstm_hidden_var, spatial_feat_var)
+    print("temporal weight")         # (ts)
+    print(temporal_weight.size())
+    # print(temporal_weight.sum(dim=1))
+    temporal_feat_var = spatial_feat_var * temporal_weight.unsqueeze(2)
+    print("temporal feat")
+    print(temporal_feat_var.size())
+
+
 
 if __name__ == '__main__':
     main()
