@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 """
 File: logger.py
 Modified by: Senthil Purushwalkam

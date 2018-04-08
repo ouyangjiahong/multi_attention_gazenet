@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 import os
 import torch
 import torch.utils.model_zoo as model_zoo
