@@ -1,6 +1,8 @@
 #!/usr/bin/env python
 import numpy as np
 import torch
+from skimage import data, exposure, img_as_float
+from PIL import ImageEnhance, Image
 
 def normalize(imgs):
     mean=[0.485, 0.456, 0.406]
@@ -34,16 +36,18 @@ def denormalize(imgs):
 
     return imgs
 
-    # imgs_trans = np.zeros((shape[0], shape[3], shape[1], shape[2]))
-    # for i in range(shape[0]):
-    #     img = imgs[i]
-    #     img = img / 255.0
-    #     mean=[0.485, 0.456, 0.406]
-    #     std=[0.229, 0.224, 0.225]
-    #     img = (img - mean) / std
-    #     img = np.transpose(img, (2, 0, 1))
-    #     imgs_trans[i,:,:,:] = img
-    # return imgs_trans
+# def adjust_contrast(img):
+#     img_gamma = exposure.rescale_intensity(img)
+#     print(img_gamma.shape)
+#     return img_gamma
+
+def adjust_contrast(img):
+    img = Image.fromarray(np.uint8(img))
+    enhancer = ImageEnhance.Contrast(img)
+    img_new = enhancer.enhance(1)
+    enhancer = ImageEnhance.Color(img_new)
+    img_new = enhancer.enhance(1.5)
+    return img_new
 
 def metric_frame(output, target):
     correct = 0

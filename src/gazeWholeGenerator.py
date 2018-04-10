@@ -819,6 +819,25 @@ def load_gaze_sequence(interaction_path, gaze_file_name='gaze.npy'):
     gaze_sequence = np.load(os.path.join(interaction_path, gaze_file_name))
     return gaze_sequence
 
+def modify_gaze_sequence_correct(gaze_seq, ori_width=640, ori_height=360, crop=True, target_size=None):
+    # print(gaze_seq.shape)
+    if crop == True:
+        # print("crop gaze")
+        gaze_seq[:, 1] *= ori_width
+        gaze_seq[:, 2] *= ori_height
+        delta = ori_width - ori_height
+        gaze_seq[:, 1] -= delta
+        if target_size != None or target_size != (ori_height, ori_height):
+            gaze_seq[:, 1] *= target_size[1] / float(ori_width)
+            gaze_seq[:, 2] *= target_size[0] / float(ori_height)
+    else:
+        gaze_seq[:, 2] = 1 - gaze_seq[:, 2]
+        gaze_seq[:, 1] *= target_size[1]
+        gaze_seq[:, 2] *= target_size[2]
+    gaze_seq[:, 1] = gaze_seq[:, 1].astype(int)
+    gaze_seq[:, 2] = gaze_seq[:, 2].astype(int)
+    return gaze_seq
+
 def modify_gaze_sequence(gaze_seq, ori_width=640, ori_height=360, crop=True, target_size=None):
     # print(gaze_seq.shape)
     gaze_seq[:, 1] *= ori_width
