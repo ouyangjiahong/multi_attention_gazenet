@@ -69,6 +69,7 @@ class SpatialAttentionLayer(nn.Module):
         for i in range(grid_num):
             H = self.linear_lstm(lstm_hidden)
             # print(H.size())
+            print(cnn_feat[:,i,:].size())
             V = self.linear_cnn(cnn_feat[:,i,:])
             # print(V.size())
             feat_sum = H + V
