@@ -11,7 +11,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.nn.parallel
 import numpy as np
-from skimage.io import imsave
+# from skimage.io import imsave
+from scipy.misc import imsave
 import matplotlib.pyplot as plt
 # from skimage.transform import resize
 
@@ -184,23 +185,23 @@ def visualization(iter, acc_cur, img_seq, gaze_seq, target_seq_var, prediction, 
         img = img_seq[i,:,:,:]
         gaze = gaze_seq[i,:]
 
-        x = img.shape[1] * gaze[1]
-        y = img.shape[0] * (1 - gaze[2])
+        x = gaze[1]*224.0/640           # don't need this if using modified_gaze_sequence_correct
+        y = (360 - gaze[2])*224.0/360
         left = int(max(0, x-5))
         right = int(min(x+5, img.shape[1]-1))
         above = int(max(0, y-5))
         bottom = int(min(y+5, img.shape[0]-1))
         img[above:bottom, left:right, 0] = 0
-        img[above:bottom, left:right, 1] = 	0
-        img[above:bottom, left:right, 2] = 	1
+        img[above:bottom, left:right, 1] = 0
+        img[above:bottom, left:right, 2] = 255
 
-        img_path = subdir_path + str('%3d'%i) + '_' + str(target) + \
+        img_path = subdir_path + str('%03d'%i) + '_' + str(target) + \
                     '_' + str(predict) + '.jpg'
         imsave(img_path, img)
 
 def main():
     # define parameters
-    TRAIN = True
+    TRAIN = False
     num_class = 6
     batch_size = 1
     time_step = 32
@@ -246,6 +247,15 @@ def main():
                 batch_size=batch_size, target_size= img_size, class_mode='sequence_pytorch')
     # val_data = train_data
 
+    def test(train_data):
+        [img_seq, gaze_seq], target = next(train_data)
+        img = img_seq[100,:,:,:]
+        img_gamma = adjust_contrast(img)
+        imsave('contrast.jpg', img_gamma)
+        imsave('original.jpg', img)
+
+    test(train_data)
+    print("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
     # img_seq: (ts,224,224,3), gaze_seq: (ts, 3), ouput: (ts, 6)
     # [img_seq, gaze_seq], output = next(train_data)
     # print("gaze data shape")
@@ -306,7 +316,7 @@ def save_checkpoint(state, is_best, filename='../model/spatial/checkpoint.pth.ta
     if is_best:
         shutil.copyfile(filename, '../model/spatial/model_best.pth.tar')
 
-def load_checkpoint(model, filename='../model/spatial/checkpoint.pth.32.tar'):
+def load_checkpoint(model, filename='../model/spatial/model_best.pth.tar'):
     if os.path.isfile(filename):
             checkpoint = torch.load(filename)
             epoch = checkpoint['epoch']

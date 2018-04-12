@@ -21,7 +21,7 @@ from functools import partial
 
 from keras import backend as K
 from keras.utils.data_utils import Sequence
-
+import pdb
 from util import *
 
 try:
@@ -836,7 +836,7 @@ def modify_gaze_sequence_correct(gaze_seq, ori_width=640, ori_height=360, crop=T
     else:
         gaze_seq[:, 2] = 1 - gaze_seq[:, 2]
         gaze_seq[:, 1] *= target_size[1]
-        gaze_seq[:, 2] *= target_size[2]
+        gaze_seq[:, 2] *= target_size[0]
     gaze_seq[:, 1] = gaze_seq[:, 1].astype(int)
     gaze_seq[:, 2] = gaze_seq[:, 2].astype(int)
     return gaze_seq
@@ -875,7 +875,7 @@ def load_interaction_sequence(interaction_path, white_list_formats, grayscale=Fa
         img_path = os.path.join(root, fname)
         # print (img_path)
         img, width, height = load_img(img_path, grayscale=grayscale, target_size=target_size, interpolation=interpolation, crop=crop)
-        # img = adjust_contrast(img)
+        img = adjust_contrast(img)
         x = img_to_array(img, data_format=None)
         img_sequence.append(x)
     # print(interaction_path)
@@ -887,8 +887,8 @@ def load_interaction_sequence(interaction_path, white_list_formats, grayscale=Fa
     # print(len(img_sequence))
     if label_sequence[start:start+end:time_skip, :].shape[0] != len(img_sequence):
         img_sequence.pop()
-    # gaze_sequence = modify_gaze_sequence_correct(gaze_sequence, ori_width=width, ori_height=height, crop=crop, target_size=target_size)
-    gaze_sequence = modify_gaze_sequence(gaze_sequence, ori_width=width, ori_height=height, crop=crop, target_size=target_size)
+    gaze_sequence = modify_gaze_sequence_correct(gaze_sequence, ori_width=width, ori_height=height, crop=crop, target_size=target_size)
+    # gaze_sequence = modify_gaze_sequence(gaze_sequence, ori_width=width, ori_height=height, crop=crop, target_size=target_size)
 
 
     assert len(img_sequence) <= time_steps
@@ -955,6 +955,7 @@ class DirectoryIterator(Iterator):
                  follow_links=False,
                  subset=None,
                  interpolation='nearest'):
+        # pdb.set_trace()
         if data_format is None:
             data_format = K.image_data_format()
         self.directory = directory
