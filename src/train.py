@@ -51,8 +51,8 @@ def main():
     print("spatial weight")         # (bs, grid_num)
     print(spatial_weight.size())
     print(spatial_weight.sum(dim=1))
-    spatial_feat_var = cnn_feat_var * spatial_weight.unsqueeze(3)   # (bs, 256, 36)
-    spatial_feat_var = spatial_feat_var.sum(2)      # (bs, 256)
+    spatial_feat_var = cnn_feat_var[:,0,:,:] * spatial_weight.unsqueeze(2)   # (bs, 256, 36)
+    spatial_feat_var = spatial_feat_var.sum(1)      # (bs, 256)
     print("spatial feat")
     print(spatial_feat_var.size())
 
@@ -63,21 +63,28 @@ def main():
     temporal_attention_layer.train()
 
     t_cnt = 0
+    spatial_feat_all_var = spatial_feat_var     # t_cnt = 0
     while(True):
-        if t_cnt >= ts:         # in real-time, don't know the time steps
+        t_cnt += 1
+        print("current time step")
+        print(t_cnt)
+        if t_cnt > ts:         # in real-time, don't know the time steps
             print("finish the interaction")
             break
         lstm_hidden = torch.randn(bs, 64)
-        lstm_hidden = torch.randn(bs, 64).cuda()    # should be h[t-1]
+        spatial_feat_all_var = spatial_feat_var.cat((spatial_feat_all_var,
+                                                spatial_feat_var), dim=1)   #(bs,t_cnt,256)
+        print(spatial_feat_all_var.size())
+        spatial_feat_all_reshape_var = spatial_feat_all_var.view(bs, t_cnt+1, -1)
+        # lstm_hidden = torch.randn(bs, 64).cuda()    # should be h[t-1]
         lstm_hidden_var = torch.autograd.Variable(lstm_hidden)
-        temporal_weight = temporal_attention_layer(lstm_hidden_var, spatial_feat_var[:,t_cnt,:])
+        temporal_weight = temporal_attention_layer(lstm_hidden_var, spatial_feat_all_reshape_var)
         print("temporal weight")         # (bs)
         print(temporal_weight.size())
-        temporal_feat_var = spatial_feat_var * temporal_weight.unsqueeze(2)
+        temporal_feat_var = spatial_feat_all_reshape_var * temporal_weight.unsqueeze(2)
         print("temporal feat")
         print(temporal_feat_var.size())
         # print(temporal_weight.sum(dim=1))
-        t_cnt += 1
 
 if __name__ == '__main__':
     main()

@@ -29,6 +29,8 @@ class FeatureExtractor(nn.Module):
         if self.arch == 'alexnet':
             pretrained_model = models.__dict__[self.arch](pretrained=True)
             pretrained_model = pretrained_model.features    # only keep the conv layers
+            pretrained_model = nn.Sequential(*list(pretrained_model.children())[:-1]) # remove the last maxpool
+            print(pretrained_model)
         else:
             raise Exception("Please download the model to ~/.torch and change the params")
         return pretrained_model
@@ -70,6 +72,7 @@ class SpatialAttentionLayer(nn.Module):
         for i in range(grid_num):
             H = self.linear_lstm(lstm_hidden)
             # print(H.size())
+            # print(cnn_feat[:,i,:].size())
             V = self.linear_cnn(cnn_feat[:,i,:])
             # print(V.size())
             feat_sum = H + V
