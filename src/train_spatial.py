@@ -11,7 +11,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.nn.parallel
 import numpy as np
-from skimage.io import imsave
+from skimage.io import imsave         # shouldn't comment if using visualize
 import matplotlib.pyplot as plt
 # from skimage.transform import resize
 
@@ -196,7 +196,7 @@ def visualization(iter, acc_cur, img_seq, gaze_seq, target_seq_var, prediction, 
 
         img_path = subdir_path + str('%3d'%i) + '_' + str(target) + \
                     '_' + str(predict) + '.jpg'
-        imsave(img_path, img)
+        # imsave(img_path, img)
 
 def main():
     # define parameters
@@ -262,7 +262,7 @@ def main():
 
         for epoch in range(epochs):
             adjust_learning_rate(optimizer, epoch, learning_rate)
-            print 'Epoch: {}'.format(epoch)
+            print('Epoch: {}'.format(epoch))
             # train for one epoch
             train(train_data, extractor_model, model, criterion, optimizer, epoch, logger, para)
 

@@ -9,6 +9,8 @@ from torchvision.models.vgg import model_urls
 import torch.nn as nn
 import torch.nn.parallel
 import numpy as np
+from skimage.io import imsave
+from skimage.transform import resize
 
 
 class FeatureExtractor(nn.Module):
@@ -29,7 +31,8 @@ class FeatureExtractor(nn.Module):
         if self.arch == 'alexnet':
             pretrained_model = models.__dict__[self.arch](pretrained=True)
             pretrained_model = pretrained_model.features    # only keep the conv layers
-            pretrained_model = nn.Sequential(*list(pretrained_model.children())[:-1]) # remove the last maxpool
+            #TODO: change it back
+            # pretrained_model = nn.Sequential(*list(pretrained_model.children())[:-1]) # remove the last maxpool
             print(pretrained_model)
         else:
             raise Exception("Please download the model to ~/.torch and change the params")
@@ -183,17 +186,26 @@ class SpatialAttentionModel(nn.Module):
         gaze_seq: (bs, num_frame, 3)
         '''
         num_frame = cnn_feat_seq.size()[1]
+        bs = cnn_feat_seq.size()[0]
         if restart == True or self.gaze_lstm_cell is None:
             self.init_gaze_lstm_state(gaze_seq)
 
         # start the loop for region weight
         pred_all = []
+        grid_side = int(np.sqrt(cnn_feat_seq.size()[2]))
+        spatial_weight_all = torch.rand(bs, num_frame, grid_side, grid_side)
+        print(spatial_weight_all[:,0,:,:])
         for i in range(num_frame):
             # calculate the weight
             spatial_weight = self.spatial_attention_layer(self.gaze_lstm_hidden,
                                         cnn_feat_seq[:,i,:,:]) # (bs, 36)
             spatial_feat = cnn_feat_seq[:,i,:,:] * spatial_weight.unsqueeze(2)   # (bs, 256, 36)
             spatial_feat = spatial_feat.sum(1)      # (bs, 256)
+            spatial_weight_all[:,i,:,:] = spatial_weight.view((-1, grid_side, grid_side)).data
+            # print(spatial_weight_all[:,i,:,:])
+            spatial_weight_vis = resize(spatial_weight, (224, 224))
+            spatial_weight_vis = (255 * spatial_weight_vis).astype(np.uint8)
+            imsave('../vis/' + str('%03d'%i), spatial_weight_vis)
 
             # update the lstm, h: (bs, hidden_num) + f: (bs, 256)
             if i == 0:
