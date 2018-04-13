@@ -11,8 +11,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.nn.parallel
 import numpy as np
-# from skimage.io import imsave
-from scipy.misc import imsave
+from skimage.io import imsave         # shouldn't comment if using visualize
 import matplotlib.pyplot as plt
 # from skimage.transform import resize
 
@@ -197,7 +196,7 @@ def visualization(iter, acc_cur, img_seq, gaze_seq, target_seq_var, prediction, 
 
         img_path = subdir_path + str('%03d'%i) + '_' + str(target) + \
                     '_' + str(predict) + '.jpg'
-        imsave(img_path, img)
+        # imsave(img_path, img)
 
 def main():
     # define parameters
@@ -254,7 +253,7 @@ def main():
         imsave('contrast.jpg', img_gamma)
         imsave('original.jpg', img)
 
-    test(train_data)
+    # test(train_data)
     print("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
     # img_seq: (ts,224,224,3), gaze_seq: (ts, 3), ouput: (ts, 6)
     # [img_seq, gaze_seq], output = next(train_data)
@@ -272,7 +271,7 @@ def main():
 
         for epoch in range(epochs):
             adjust_learning_rate(optimizer, epoch, learning_rate)
-            print 'Epoch: {}'.format(epoch)
+            print('Epoch: {}'.format(epoch))
             # train for one epoch
             train(train_data, extractor_model, model, criterion, optimizer, epoch, logger, para)
 
@@ -296,7 +295,7 @@ def main():
         if not os.path.exists(vis_data_path):
             os.makedirs(vis_data_path)
         acc = validate(train_data, extractor_model, model, criterion, -1, \
-                        logger, para, True, vis_data_path)
+                        logger, para, False, vis_data_path)
         print("visualization for validation data")
         vis_data_path = '../vis/val/'
         if not os.path.exists(vis_data_path):

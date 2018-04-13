@@ -9,6 +9,8 @@ from torchvision.models.vgg import model_urls
 import torch.nn as nn
 import torch.nn.parallel
 import numpy as np
+from skimage.io import imsave
+from skimage.transform import resize
 
 
 class FeatureExtractor(nn.Module):
@@ -29,6 +31,7 @@ class FeatureExtractor(nn.Module):
         if self.arch == 'alexnet':
             pretrained_model = models.__dict__[self.arch](pretrained=True)
             pretrained_model = pretrained_model.features    # only keep the conv layers
+            #TODO: change it back
             pretrained_model = nn.Sequential(*list(pretrained_model.children())[:-1]) # remove the last maxpool
             print(pretrained_model)
         else:
@@ -60,9 +63,6 @@ class SpatialAttentionLayer(nn.Module):
         zi = wh * tanh(Wv * V + Wg * H)
         weight : ai = sigmoid(zi)
         '''
-        # print("spatial layer forward")
-        # print(lstm_hidden.size())
-        # print(cnn_feat.size())
         bs = cnn_feat.size()[0]         #normally should be 1
         # 6*6=36, corresponding to the size of CNN output feature size
         grid_num = cnn_feat.size()[1]
@@ -71,10 +71,7 @@ class SpatialAttentionLayer(nn.Module):
         weight = []
         for i in range(grid_num):
             H = self.linear_lstm(lstm_hidden)
-            # print(H.size())
-            # print(cnn_feat[:,i,:].size())
             V = self.linear_cnn(cnn_feat[:,i,:])
-            # print(V.size())
             feat_sum = H + V
             feat_sum = F.tanh(feat_sum)                 # (bs, projected_size)
             feat_sum = self.linear_weight(feat_sum)     # (bs, 1)
@@ -148,6 +145,8 @@ class SpatialAttentionModel(nn.Module):
         self.mlp_layer = self.build_mlp_classifier()
         self.init_hidden = self.init_gaze_lstm_hidden()
         self.init_cell = self.init_gaze_lstm_cell()
+        self.gaze_lstm_hidden = None
+        self.gaze_lstm_cell = None
 
     def build_gaze_lstm(self):
         lstm = nn.LSTM(self.gaze_size, self.gaze_lstm_hidden_size, batch_first=True)
@@ -178,62 +177,58 @@ class SpatialAttentionModel(nn.Module):
 
     def init_gaze_lstm_state(self, gaze_seq):
         mean_gaze = torch.mean(gaze_seq, 1).squeeze(1)  # (bs, 3)
-        # print(mean_gaze.size())
-        gaze_lstm_hidden = F.tanh(self.init_hidden(mean_gaze)).unsqueeze(0)  # (bs, h)
-        # print(gaze_lstm_hidden.size())
-        # gaze_lstm_hidden = gaze_lstm_hidden.repeat(2,1,1)            # (2, bs, h)
-        gaze_lstm_cell = F.tanh(self.init_cell(mean_gaze)).unsqueeze(0)
-        # gaze_lstm_cell = gaze_lstm_cell.repeat(2,1,1)            # (2, bs, h)
-        return gaze_lstm_hidden, gaze_lstm_cell
+        self.gaze_lstm_hidden = F.tanh(self.init_hidden(mean_gaze)).unsqueeze(0)  # (bs, h)
+        self.gaze_lstm_cell = F.tanh(self.init_cell(mean_gaze)).unsqueeze(0) # (bs, h)
 
-    def forward(self, cnn_feat_seq, gaze_seq):
+    def forward(self, cnn_feat_seq, gaze_seq, restart=True):
         '''
         cnn_feat_seq: (bs, num_frame, 36, 256)
         gaze_seq: (bs, num_frame, 3)
         '''
         num_frame = cnn_feat_seq.size()[1]
-        gaze_lstm_hidden, gaze_lstm_cell = self.init_gaze_lstm_state(gaze_seq)
-        # print("lstm hidden init")
-        # print(gaze_lstm_hidden.size())
+        bs = cnn_feat_seq.size()[0]
+        if restart == True or self.gaze_lstm_cell is None:
+            self.init_gaze_lstm_state(gaze_seq)
 
         # start the loop for region weight
         pred_all = []
+        grid_side = int(np.sqrt(cnn_feat_seq.size()[2]))
         for i in range(num_frame):
             # calculate the weight
-            spatial_weight = self.spatial_attention_layer(gaze_lstm_hidden,
+            spatial_weight = self.spatial_attention_layer(self.gaze_lstm_hidden,
                                         cnn_feat_seq[:,i,:,:]) # (bs, 36)
             spatial_feat = cnn_feat_seq[:,i,:,:] * spatial_weight.unsqueeze(2)   # (bs, 256, 36)
             spatial_feat = spatial_feat.sum(1)      # (bs, 256)
 
+            if False:           # save weight image
+                spatial_weight_vis = 2550 * spatial_weight_all[:,i,:,:]
+                spatial_weight_vis = spatial_weight_vis.cpu().numpy()
+                # print(spatial_weight_vis)
+                spatial_weight_vis = spatial_weight_vis.astype(np.uint8)
+                spatial_weight_vis = resize(spatial_weight_vis[0], (224, 224))
+                # print('save weight')
+                img_name = '../vis/' + str('%03d'%i) + '.jpg'
+                print(img_name)
+                imsave(img_name, spatial_weight_vis)
+
             # update the lstm, h: (bs, hidden_num) + f: (bs, 256)
-            # print("gaze lstm hidden and cell")
-            # print(gaze_lstm_hidden.size())
-            # print(gaze_lstm_cell.size())
             if i == 0:
                 gaze = gaze_seq[:, 0, :]
                 gaze = gaze.unsqueeze(1)
             else:
                 gaze = gaze_seq[:, :i, :]
-            gaze_lstm_output, (gaze_lstm_hidden, gaze_lstm_cell) = self.gaze_lstm_layer(gaze,
-                                            (gaze_lstm_hidden, gaze_lstm_cell))
+            gaze_lstm_output, (self.gaze_lstm_hidden, self.gaze_lstm_cell) = self.gaze_lstm_layer(gaze,
+                                            (self.gaze_lstm_hidden, self.gaze_lstm_cell))
 
-            # concate lstm and feat for mlp
-            feat_concat = torch.cat((spatial_feat, gaze_lstm_hidden[-1]), dim=1)
-            # print("feat concat shape")
-            # print(feat_concat.size())   # (bs, 256 + 64)
+            # concate lstm and feat for mlp, (bs, 256 + 64)
+            feat_concat = torch.cat((spatial_feat, self.gaze_lstm_hidden[-1]), dim=1)
 
             pred = self.mlp_layer(feat_concat)
             pred_all.append(pred.unsqueeze(0))
 
         pred_all = torch.cat(pred_all, 1)
-        # print("prediction size")
-        # print(pred_all.size())
 
         return pred_all
-
-
-
-
 
 
 # class MultiAttentionModel(nn.Module):
