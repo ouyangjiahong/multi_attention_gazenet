@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 import numpy as np
 import torch
-from skimage import data, exposure, img_as_float
+# from skimage import data, exposure, img_as_float
 from PIL import ImageEnhance, Image
 
 def normalize(imgs):
