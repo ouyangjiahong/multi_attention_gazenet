@@ -32,7 +32,7 @@ class FeatureExtractor(nn.Module):
             pretrained_model = models.__dict__[self.arch](pretrained=True)
             pretrained_model = pretrained_model.features    # only keep the conv layers
             #TODO: change it back
-            pretrained_model = nn.Sequential(*list(pretrained_model.children())[:-1]) # remove the last maxpool
+            # pretrained_model = nn.Sequential(*list(pretrained_model.children())[:-1]) # remove the last maxpool
             print(pretrained_model)
         else:
             raise Exception("Please download the model to ~/.torch and change the params")
@@ -200,7 +200,7 @@ class SpatialAttentionModel(nn.Module):
         grid_side = int(np.sqrt(cnn_feat_seq.size()[2]))
         for i in range(num_frame):
             # calculate the weight
-            spatial_weight = self.spatial_attention_layer(self.gaze_lstm_hidden,
+            spatial_weight = self.spatial_attention_layer(self.gaze_lstm_hidden.squeeze(dim=0),
                                         cnn_feat_seq[:,i,:,:]) # (bs, 36)
             spatial_feat = cnn_feat_seq[:,i,:,:] * spatial_weight.unsqueeze(2)   # (bs, 256, 36)
             spatial_feat = spatial_feat.sum(1)      # (bs, 256)
@@ -218,6 +218,11 @@ class SpatialAttentionModel(nn.Module):
 
             # update the lstm, h: (bs, hidden_num) + f: (bs, 256)
             gaze = gaze_seq[:, i, :].unsqueeze(1)
+            # if i == 0:
+            #     gaze = gaze_seq[:, 0, :]
+            #     gaze = gaze.unsqueeze(1)
+            # else:
+            #     gaze = gaze_seq[:, :i, :]
             gaze_lstm_output, (self.gaze_lstm_hidden, self.gaze_lstm_cell) = self.gaze_lstm_layer(gaze,
                                             (self.gaze_lstm_hidden, self.gaze_lstm_cell))
 
