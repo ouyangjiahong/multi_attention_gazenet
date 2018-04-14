@@ -222,7 +222,7 @@ class SpatialAttentionModel(nn.Module):
                                             (self.gaze_lstm_hidden, self.gaze_lstm_cell))
 
             # concate lstm and feat for mlp, (bs, 256 + 64), self.gaze_lstm_hidden: (1,1,64)
-            feat_concat = torch.cat((spatial_feat, self.gaze_lstm_hidden.squeeze(dim=0)), dim=1)
+            feat_concat = torch.cat((spatial_feat, self.gaze_lstm_hidden[0]), dim=1)
 
             pred = self.mlp_layer(feat_concat)
             pred_all.append(pred.unsqueeze(0))
@@ -331,7 +331,7 @@ class MultipleAttentionModel(nn.Module):
                                             (self.gaze_lstm_hidden, self.gaze_lstm_cell))
 
             # concate lstm and feat for mlp, (bs, 256 + 64)
-            feat_concat = torch.cat((temporal_feat, self.gaze_lstm_hidden.squeeze(dim=0)), dim=1)
+            feat_concat = torch.cat((temporal_feat, self.gaze_lstm_hidden[0]), dim=1)
 
             pred = self.mlp_layer(feat_concat)
             pred_all.append(pred.unsqueeze(0))
