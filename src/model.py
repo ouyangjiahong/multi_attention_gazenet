@@ -264,6 +264,7 @@ class MultipleAttentionModel(nn.Module):
         self.init_cell = self.init_gaze_lstm_cell()
         self.gaze_lstm_hidden = None
         self.gaze_lstm_cell = None
+        self.temporal_feat_counter = None
 
     def build_gaze_lstm(self):
         lstm = nn.LSTM(self.gaze_size, self.gaze_lstm_hidden_size, batch_first=True)
@@ -306,6 +307,9 @@ class MultipleAttentionModel(nn.Module):
         bs = cnn_feat_seq.size()[0]
         if restart == True or self.gaze_lstm_cell is None:
             self.init_gaze_lstm_state(gaze_seq)
+            self.temporal_feat_counter = torch.autograd.Variable(torch.zeros(bs, self.cnn_feat_size))
+            print('feat counter')
+            print(self.temporal_feat_counter.size())
 
         # start the loop for region weight
         pred_all = []
@@ -321,9 +325,11 @@ class MultipleAttentionModel(nn.Module):
             restart_tem = False
             if i == 0:
                 restart_tem = True
-            temporal_weight = self.temporal_attention_layer(self.gaze_lstm_hidden.squeeze(dim=0),
+            temporal_weight = (i+1) * self.temporal_attention_layer(self.gaze_lstm_hidden.squeeze(dim=0),
                                         spatial_feat, restart=restart_tem)      # (bs)
             temporal_feat = spatial_feat * temporal_weight      # (bs, 256)
+            self.temporal_feat_counter = torch.add(self.temporal_feat_counter, temporal_feat)
+            temporal_feat = self.temporal_feat_counter / (i+1)
 
             # update the lstm, h: (bs, hidden_num) + f: (bs, 256)
             gaze = gaze_seq[:, i, :].unsqueeze(1)
