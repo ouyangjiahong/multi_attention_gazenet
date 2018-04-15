@@ -210,6 +210,7 @@ def main():
     gaze_lstm_hidden_size = 64
     gaze_lstm_projected_size = 128
     temporal_projected_size = 128
+    queue_size = 32
     learning_rate = 0.0001
     momentum = 0.9
     weight_decay = 1e-4
@@ -230,7 +231,7 @@ def main():
 
     model = MultipleAttentionModel(num_class, cnn_feat_size,
                         gaze_size, gaze_lstm_hidden_size, gaze_lstm_projected_size,
-                        temporal_projected_size)
+                        temporal_projected_size, queue_size)
     model.cuda()
 
     # define loss and optimizer
