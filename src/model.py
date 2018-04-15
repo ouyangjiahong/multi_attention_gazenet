@@ -97,31 +97,27 @@ class TemporalAttentionLayer(nn.Module):
         self.linear_lstm = nn.Linear(lstm_hidden_size, projected_size)
         self.linear_spatial_feat = nn.Linear(spatial_feat_size, projected_size)
         self.linear_weight = nn.Linear(projected_size, 1, bias=False)
-        self.weight_counter = None
 
-    def forward(self, lstm_hidden, spatial_feat, restart=True):
+    def forward(self, lstm_hidden, spatial_feat):
         '''
-        lstm_hidden: (bs, lstm_hidden_size)
-        spatial_feat: (bs, spatial_feat_size)
+        lstm_hidden: (bs, ts, lstm_hidden_size)
+        spatial_feat: (bs, ts, spatial_feat_size)
         zi = wh * tanh(Wv * V + Wg * H)
         weight : ai = sigmoid(zi)
         '''
         bs = spatial_feat.size()[0]         #normally should be 1
-        if restart == True:
-            self.weight_counter = torch.autograd.Variable(torch.zeros(bs))
-        H = self.linear_lstm(lstm_hidden)
-        V = self.linear_spatial_feat(spatial_feat)
-        feat_sum = H + V
-        feat_sum = F.tanh(feat_sum)                 # (bs, projected_size)
-        feat_sum = self.linear_weight(feat_sum)     # (bs, 1)
-        weight = feat_sum.view(bs)               # (bs)
-        weight = torch.exp(weight)
-        self.weight_counter = torch.add(self.weight_counter, weight)  # (bs)
-        print('weight~~~~~~~~~~~~~~~~~~')
-        print(self.weight_counter)
-        temporal_weight = weight / self.weight_counter
-        print(weight)
-        print(temporal_weight)
+        ts = spatial_feat.size()[1]
+
+        weight = []
+        for i in range(ts):
+            H = self.linear_lstm(lstm_hidden[:,i,:])
+            V = self.linear_spatial_feat(spatial_feat[:,i,:])
+            feat_sum = H + V
+            feat_sum = F.tanh(feat_sum)                 # (bs, projected_size)
+            feat_sum = self.linear_weight(feat_sum)     # (bs, 1)
+            weight.append(feat_sum)
+        weight = torch.cat(weight, dim=0).view(bs, ts)       # (bs, ts)
+        temporal_weight = F.softmax(weight, dim=1)      # (bs, ts)
         return temporal_weight
 
 class SpatialAttentionModel(nn.Module):
@@ -242,7 +238,7 @@ class MultipleAttentionModel(nn.Module):
     '''
     def __init__(self, num_class, cnn_feat_size, gaze_size,
                 gaze_lstm_hidden_size, spatial_projected_size,
-                temporal_projected_size):
+                temporal_projected_size, queue_size):
         '''
         num_frame: set frame number for each interaction
         cnn_feat_size: number of CNN features for each image
@@ -259,6 +255,7 @@ class MultipleAttentionModel(nn.Module):
         self.gaze_lstm_hidden_size = gaze_lstm_hidden_size
         self.spatial_projected_size = spatial_projected_size
         self.temporal_projected_size = temporal_projected_size
+        self.queue_size = queue_size
         self.gaze_lstm_layer = self.build_gaze_lstm()
         self.spatial_attention_layer = SpatialAttentionLayer(gaze_lstm_hidden_size,
                                             cnn_feat_size, spatial_projected_size)
@@ -270,6 +267,8 @@ class MultipleAttentionModel(nn.Module):
         self.gaze_lstm_hidden = None
         self.gaze_lstm_cell = None
         self.temporal_feat_counter = None
+        self.queue_hidden = None
+        self.queue_spatial = None
 
     def build_gaze_lstm(self):
         lstm = nn.LSTM(self.gaze_size, self.gaze_lstm_hidden_size, batch_first=True)
@@ -312,9 +311,8 @@ class MultipleAttentionModel(nn.Module):
         bs = cnn_feat_seq.size()[0]
         if restart == True or self.gaze_lstm_cell is None:
             self.init_gaze_lstm_state(gaze_seq)
-            self.temporal_feat_counter = torch.autograd.Variable(torch.zeros(bs, self.cnn_feat_size))
-            print('feat counter')
-            print(self.temporal_feat_counter.size())
+            self.queue_hidden = []
+            self.queue_spatial = []
 
         # start the loop for region weight
         pred_all = []
@@ -325,16 +323,24 @@ class MultipleAttentionModel(nn.Module):
                                         cnn_feat_seq[:,i,:,:]) # (bs, 36)
             spatial_feat = cnn_feat_seq[:,i,:,:] * spatial_weight.unsqueeze(2)   # (bs, 36, 256)
             spatial_feat = spatial_feat.sum(1)      # (bs, 256)
+            self.queue_spatial.append(spatial_feat)                             #[(bs, 256)]
+            self.queue_hidden.append(self.gaze_lstm_hidden.squeeze(dim=0))      #[(bs, 64)]
 
             # calculate the video feature using temporal weight
-            restart_tem = False
-            if i == 0:
-                restart_tem = True
-            temporal_weight = (i+1) * self.temporal_attention_layer(self.gaze_lstm_hidden.squeeze(dim=0),
-                                        spatial_feat, restart=restart_tem)      # (bs)
-            temporal_feat = spatial_feat * temporal_weight      # (bs, 256)
-            self.temporal_feat_counter = torch.add(self.temporal_feat_counter, temporal_feat)
-            temporal_feat = self.temporal_feat_counter / (i+1)
+            ts = len(self.queue_spatial)
+            if ts > self.queue_size:        # update queue
+                self.queue_spatial.pop(0)
+                self.queue_hidden.pop(0)
+                ts = self.queue_size
+            queue_hidden_var = torch.cat(self.queue_hidden, dim=0).view(ts, bs, -1)     # (ts, bs, 64)
+            queue_hidden_var = queue_hidden_var.transpose(1, 0)      # (bs, ts, 64)
+            queue_spatial_var = torch.cat(self.queue_spatial, dim=0).view(ts, bs, -1)     # (ts, bs, 256)
+            queue_spatial_var = queue_spatial_var.transpose(1, 0)      # (bs, ts, 256)
+            temporal_weight = self.temporal_attention_layer(queue_hidden_var, queue_spatial_var)   # (bs, ts)
+            print(temporal_weight.size())
+            print(queue_spatial_var.size())
+            temporal_feat = queue_spatial_var * temporal_weight.unsqueeze(2)      # (bs, ts, 256)
+            temporal_feat = temporal_feat.sum(1)      # (bs, 256)
 
             # update the lstm, h: (bs, hidden_num) + f: (bs, 256)
             gaze = gaze_seq[:, i, :].unsqueeze(1)
