@@ -37,16 +37,16 @@ def train(train_data, extractor_model, model, criterion, optimizer, epoch, logge
     for i in range(train_num):
         # get data, img_seq: (ts,224,224,3), gaze_seq: (ts, 3), ouput: (ts, 6)
         [img_seq, gaze_seq], target_seq = next(train_data)
-        img_seq = img_seq[:35]          # just for speed up
-        gaze_seq = gaze_seq[:35]
-        target_seq = target_seq[:35]
+        # img_seq = img_seq[:35]          # just for speed up
+        # gaze_seq = gaze_seq[:35]
+        # target_seq = target_seq[:35]
         ts = img_seq.shape[0]
 
         img_seq = normalize(img_seq)
         img_seq = np.reshape(img_seq, (bs*ts,3,) + img_size)
-        img_seq_var = torch.autograd.Variable(torch.Tensor(img_seq), requires_grad=True)
-        gaze_seq_var = torch.autograd.Variable(torch.Tensor(gaze_seq), requires_grad=True)
-        target_seq_var = torch.autograd.Variable(torch.Tensor(target_seq)).long()
+        img_seq_var = torch.autograd.Variable(torch.Tensor(img_seq).cuda(), requires_grad=True)
+        gaze_seq_var = torch.autograd.Variable(torch.Tensor(gaze_seq).cuda(), requires_grad=True)
+        target_seq_var = torch.autograd.Variable(torch.Tensor(target_seq).cuda()).long()
         gaze_seq_var = gaze_seq_var.unsqueeze(0)        # no bs dim
 
         # extract cnn feature
@@ -106,17 +106,17 @@ def validate(val_data, extractor_model, model, criterion, epoch, logger, para,
     for i in range(val_num):
         # get data, img_seq: (ts,224,224,3), gaze_seq: (ts, 3), ouput: (ts, 6)
         [img_seq, gaze_seq], target_seq = next(val_data)
-        img_seq = img_seq[:30]          # just for speed up
-        gaze_seq = gaze_seq[:30]
-        target_seq = target_seq[:30]
+        # img_seq = img_seq[:30]          # just for speed up
+        # gaze_seq = gaze_seq[:30]
+        # target_seq = target_seq[:30]
         ts = img_seq.shape[0]
         ts_all += ts
 
         img_seq = normalize(img_seq)
         img_seq = np.reshape(img_seq, (bs*ts,3,) + img_size)
-        img_seq_var = torch.autograd.Variable(torch.Tensor(img_seq))
-        gaze_seq_var = torch.autograd.Variable(torch.Tensor(gaze_seq))
-        target_seq_var = torch.autograd.Variable(torch.Tensor(target_seq)).long()
+        img_seq_var = torch.autograd.Variable(torch.Tensor(img_seq).cuda())
+        gaze_seq_var = torch.autograd.Variable(torch.Tensor(gaze_seq).cuda())
+        target_seq_var = torch.autograd.Variable(torch.Tensor(target_seq).cuda()).long()
         gaze_seq_var = gaze_seq_var.unsqueeze(0)        # no bs dim
 
         # extract cnn feature
@@ -201,9 +201,9 @@ def visualization(iter, acc_cur, img_seq, gaze_seq, target_seq_var, prediction, 
 def main():
     # define parameters
     TRAIN = True
+    time_skip = 2
     num_class = 6
     batch_size = 1
-    time_step = 32
     epochs = 50
     cnn_feat_size = 256     # AlexNet
     gaze_size = 3
@@ -216,7 +216,7 @@ def main():
     weight_decay = 1e-4
     eval_freq = 1       # epoch
     print_freq = 1      # iteration
-    dataset_path = '../data/gaze_dataset'
+    dataset_path = '../../gaze-net/gaze_dataset'
     # dataset_path = '../../gaze-net/gaze_dataset'
     img_size = (224, 224)
     log_path = '../log'
@@ -240,13 +240,15 @@ def main():
                                 momentum = momentum, weight_decay=weight_decay)
 
     # define generator
-    trainGenerator = gaze_gen.GazeDataGenerator(validation_split=0)
+    trainGenerator = gaze_gen.GazeDataGenerator(validation_split=0.2)
     train_data = trainGenerator.flow_from_directory(dataset_path, subset='training', crop=False,
-                    batch_size=batch_size, target_size= img_size, class_mode='sequence_pytorch')
+                    batch_size=batch_size, target_size= img_size, class_mode='sequence_pytorch',
+                    time_skip=time_skip)
     # small dataset, error using validation split
-    # val_data = trainGenerator.flow_from_directory(dataset_path, subset='validation', crop=False,
-    #             batch_size=batch_size, target_size= img_size, class_mode='sequence_pytorch')
-    val_data = train_data
+    val_data = trainGenerator.flow_from_directory(dataset_path, subset='validation', crop=False,
+                batch_size=batch_size, target_size= img_size, class_mode='sequence_pytorch',
+                time_skip=time_skip)
+    # val_data = train_data
 
     # img_seq: (ts,224,224,3), gaze_seq: (ts, 3), ouput: (ts, 6)
     # [img_seq, gaze_seq], output = next(train_data)
@@ -261,7 +263,7 @@ def main():
     if TRAIN:
         print("get into training mode")
         best_acc = 0
-
+        # acc = validate(val_data, extractor_model, model, criterion, 0, logger, para, False)
         for epoch in range(epochs):
             adjust_learning_rate(optimizer, epoch, learning_rate)
             print('Epoch: {}'.format(epoch))
@@ -302,13 +304,13 @@ def adjust_learning_rate(optimizer, epoch, learning_rate):
     for param_group in optimizer.param_groups:
         param_group['lr'] = lr
 
-def save_checkpoint(state, is_best, filename='../model/spatial/checkpoint.pth.tar'):
+def save_checkpoint(state, is_best, filename='../model/multiple/checkpoint.pth.tar'):
     print("save checkpoint")
     torch.save(state, filename)
     if is_best:
-        shutil.copyfile(filename, '../model/spatial/model_best.pth.tar')
+        shutil.copyfile(filename, '../model/multiple/model_best.pth.tar')
 
-def load_checkpoint(model, filename='../model/spatial/checkpoint.pth.32.tar'):
+def load_checkpoint(model, filename='../model/multiple/checkpoint.pth.32.tar'):
     if os.path.isfile(filename):
             checkpoint = torch.load(filename)
             epoch = checkpoint['epoch']

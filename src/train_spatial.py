@@ -200,10 +200,10 @@ def visualization(iter, acc_cur, img_seq, gaze_seq, target_seq_var, prediction, 
 
 def main():
     # define parameters
-    TRAIN = False
+    TRAIN = True
     num_class = 6
     batch_size = 1
-    time_step = 32
+    # time_step = 32
     epochs = 50
     cnn_feat_size = 256     # AlexNet
     gaze_size = 3
