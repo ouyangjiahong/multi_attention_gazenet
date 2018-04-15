@@ -32,7 +32,7 @@ class FeatureExtractor(nn.Module):
             pretrained_model = models.__dict__[self.arch](pretrained=True)
             pretrained_model = pretrained_model.features    # only keep the conv layers
             #TODO: change it back
-            pretrained_model = nn.Sequential(*list(pretrained_model.children())[:-1]) # remove the last maxpool
+            # pretrained_model = nn.Sequential(*list(pretrained_model.children())[:-1]) # remove the last maxpool
             print(pretrained_model)
         else:
             raise Exception("Please download the model to ~/.torch and change the params")
@@ -97,9 +97,8 @@ class TemporalAttentionLayer(nn.Module):
         self.linear_lstm = nn.Linear(lstm_hidden_size, projected_size)
         self.linear_spatial_feat = nn.Linear(spatial_feat_size, projected_size)
         self.linear_weight = nn.Linear(projected_size, 1, bias=False)
-        self.weight_counter = None
 
-    def forward(self, lstm_hidden, spatial_feat, restart=True):
+    def forward(self, lstm_hidden, spatial_feat):
         '''
         lstm_hidden: (bs, lstm_hidden_size)
         spatial_feat: (bs, spatial_feat_size)
@@ -107,22 +106,22 @@ class TemporalAttentionLayer(nn.Module):
         weight : ai = sigmoid(zi)
         '''
         bs = spatial_feat.size()[0]         #normally should be 1
-        if restart == True:
-            self.weight_counter = torch.autograd.Variable(torch.zeros(bs))
-        H = self.linear_lstm(lstm_hidden)
-        V = self.linear_spatial_feat(spatial_feat)
-        feat_sum = H + V
-        feat_sum = F.tanh(feat_sum)                 # (bs, projected_size)
-        feat_sum = self.linear_weight(feat_sum)     # (bs, 1)
-        weight = feat_sum.view(bs)               # (bs)
-        weight = torch.exp(weight)
-        self.weight_counter = torch.add(self.weight_counter, weight)  # (bs)
-        print('weight~~~~~~~~~~~~~~~~~~')
-        print(self.weight_counter)
-        temporal_weight = weight / self.weight_counter
-        print(weight)
-        print(temporal_weight)
-        return temporal_weight
+        ts = spatial_feat.size()[1]
+        for i in range(ts):
+            H = self.linear_lstm(lstm_hidden)
+            V = self.linear_spatial_feat(spatial_feat)
+            feat_sum = H + V
+            feat_sum = F.tanh(feat_sum)                 # (bs, projected_size)
+            feat_sum = self.linear_weight(feat_sum)     # (bs, 1)
+            weight = feat_sum.view(bs)               # (bs)
+            weight = torch.exp(weight)
+            self.weight_counter = torch.add(self.weight_counter, weight)  # (bs)
+            print('weight~~~~~~~~~~~~~~~~~~')
+            print(self.weight_counter)
+            temporal_weight = weight / self.weight_counter
+            print(weight)
+            print(temporal_weight)
+            return temporal_weight
 
 class SpatialAttentionModel(nn.Module):
     '''
@@ -254,6 +253,7 @@ class MultipleAttentionModel(nn.Module):
         self.gaze_lstm_hidden_size = gaze_lstm_hidden_size
         self.spatial_projected_size = spatial_projected_size
         self.temporal_projected_size = temporal_projected_size
+        self.queue_size = queue_size
         self.gaze_lstm_layer = self.build_gaze_lstm()
         self.spatial_attention_layer = SpatialAttentionLayer(gaze_lstm_hidden_size,
                                             cnn_feat_size, spatial_projected_size)
@@ -307,7 +307,7 @@ class MultipleAttentionModel(nn.Module):
         bs = cnn_feat_seq.size()[0]
         if restart == True or self.gaze_lstm_cell is None:
             self.init_gaze_lstm_state(gaze_seq)
-            self.temporal_feat_counter = torch.autograd.Variable(torch.zeros(bs, self.cnn_feat_size))
+            self.temporal_feat_counter = torch.autograd.Variable(torch.zeros(bs, self.cnn_feat_size))kkm
             print('feat counter')
             print(self.temporal_feat_counter.size())
 
