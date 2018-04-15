@@ -199,7 +199,7 @@ class SpatialAttentionModel(nn.Module):
         grid_side = int(np.sqrt(cnn_feat_seq.size()[2]))
         for i in range(num_frame):
             # calculate the weight
-            spatial_weight = self.spatial_attention_layer(self.gaze_lstm_hidden,
+            spatial_weight = self.spatial_attention_layer(self.gaze_lstm_hidden.squeeze(dim=0),
                                         cnn_feat_seq[:,i,:,:]) # (bs, 36)
             spatial_feat = cnn_feat_seq[:,i,:,:] * spatial_weight.unsqueeze(2)   # (bs, 256, 36)
             spatial_feat = spatial_feat.sum(1)      # (bs, 256)
@@ -217,11 +217,16 @@ class SpatialAttentionModel(nn.Module):
 
             # update the lstm, h: (bs, hidden_num) + f: (bs, 256)
             gaze = gaze_seq[:, i, :].unsqueeze(1)
+            # if i == 0:
+            #     gaze = gaze_seq[:, 0, :]
+            #     gaze = gaze.unsqueeze(1)
+            # else:
+            #     gaze = gaze_seq[:, :i, :]
             gaze_lstm_output, (self.gaze_lstm_hidden, self.gaze_lstm_cell) = self.gaze_lstm_layer(gaze,
                                             (self.gaze_lstm_hidden, self.gaze_lstm_cell))
 
             # concate lstm and feat for mlp, (bs, 256 + 64), self.gaze_lstm_hidden: (1,1,64)
-            feat_concat = torch.cat((spatial_feat, self.gaze_lstm_hidden.squeeze(dim=0)), dim=1)
+            feat_concat = torch.cat((spatial_feat, self.gaze_lstm_hidden[0]), dim=1)
 
             pred = self.mlp_layer(feat_concat)
             pred_all.append(pred.unsqueeze(0))
@@ -337,7 +342,7 @@ class MultipleAttentionModel(nn.Module):
                                             (self.gaze_lstm_hidden, self.gaze_lstm_cell))
 
             # concate lstm and feat for mlp, (bs, 256 + 64)
-            feat_concat = torch.cat((temporal_feat, self.gaze_lstm_hidden.squeeze(dim=0)), dim=1)
+            feat_concat = torch.cat((temporal_feat, self.gaze_lstm_hidden[0]), dim=1)
 
             pred = self.mlp_layer(feat_concat)
             pred_all.append(pred.unsqueeze(0))
