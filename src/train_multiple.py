@@ -234,7 +234,7 @@ def main():
     model.cuda()
 
     # define loss and optimizer
-    criterion = nn.CrossEntropyLoss()
+    criterion = nn.CrossEntropyLoss().cuda()
     optimizer = torch.optim.SGD(model.parameters(), learning_rate,
                                 momentum = momentum, weight_decay=weight_decay)
 
