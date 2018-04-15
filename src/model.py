@@ -33,7 +33,7 @@ class FeatureExtractor(nn.Module):
             pretrained_model = pretrained_model.features    # only keep the conv layers
             #TODO: change it back
             # pretrained_model = nn.Sequential(*list(pretrained_model.children())[:-1]) # remove the last maxpool
-            print(pretrained_model)
+            # print(pretrained_model)
         else:
             raise Exception("Please download the model to ~/.torch and change the params")
         return pretrained_model
@@ -238,7 +238,7 @@ class MultipleAttentionModel(nn.Module):
     '''
     def __init__(self, num_class, cnn_feat_size, gaze_size,
                 gaze_lstm_hidden_size, spatial_projected_size,
-                temporal_projected_size, queue_size):
+                temporal_projected_size, queue_size, extractor=False):
         '''
         num_frame: set frame number for each interaction
         cnn_feat_size: number of CNN features for each image
@@ -269,6 +269,18 @@ class MultipleAttentionModel(nn.Module):
         self.temporal_feat_counter = None
         self.queue_hidden = None
         self.queue_spatial = None
+        self.extractor = extractor
+        if self.extractor:
+            self.feat_extractor = self.build_feature_extractor()
+
+    def build_feature_extractor(self):
+        arch = 'alexnet'
+        extractor_model = FeatureExtractor(arch=arch)
+        for i, param in enumerate(extractor_model.features.parameters()):
+            if i <= 5:      # only fine tune the last two conv layers
+                param.requires_grad = False
+        # print(extractor_model)
+        return extractor_model
 
     def build_gaze_lstm(self):
         lstm = nn.LSTM(self.gaze_size, self.gaze_lstm_hidden_size, batch_first=True)
@@ -304,11 +316,16 @@ class MultipleAttentionModel(nn.Module):
 
     def forward(self, cnn_feat_seq, gaze_seq, restart=True):
         '''
-        cnn_feat_seq: (bs, num_frame, 36, 256)
+        cnn_feat_seq: (bs, num_frame, 36, 256) or img_seq: (bs*ts, 3, 224, 224)
         gaze_seq: (bs, num_frame, 3)
         '''
-        num_frame = cnn_feat_seq.size()[1]
-        bs = cnn_feat_seq.size()[0]
+        num_frame = gaze_seq.size()[1]
+        bs = gaze_seq.size()[0]
+        if self.extractor == True:
+            cnn_feat_seq = self.feat_extractor(cnn_feat_seq)
+            cnn_feat_seq = cnn_feat_seq.view((bs, num_frame, -1, cnn_feat_seq.size()[2]*cnn_feat_seq.size()[3]))
+            cnn_feat_seq = cnn_feat_seq.permute(0, 1, 3, 2)
+
         if restart == True or self.gaze_lstm_cell is None:
             self.init_gaze_lstm_state(gaze_seq)
             self.queue_hidden = []
@@ -337,8 +354,8 @@ class MultipleAttentionModel(nn.Module):
             queue_spatial_var = torch.cat(self.queue_spatial, dim=0).view(ts, bs, -1)     # (ts, bs, 256)
             queue_spatial_var = queue_spatial_var.transpose(1, 0)      # (bs, ts, 256)
             temporal_weight = self.temporal_attention_layer(queue_hidden_var, queue_spatial_var)   # (bs, ts)
-            print(temporal_weight.size())
-            print(queue_spatial_var.size())
+            # print(temporal_weight.size())
+            # print(queue_spatial_var.size())
             temporal_feat = queue_spatial_var * temporal_weight.unsqueeze(2)      # (bs, ts, 256)
             temporal_feat = temporal_feat.sum(1)      # (bs, 256)
 

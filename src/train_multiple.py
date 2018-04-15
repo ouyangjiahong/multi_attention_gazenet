@@ -49,16 +49,15 @@ def train(train_data, extractor_model, model, criterion, optimizer, epoch, logge
         target_seq_var = torch.autograd.Variable(torch.Tensor(target_seq).cuda()).long()
         gaze_seq_var = gaze_seq_var.unsqueeze(0)        # no bs dim
 
-        # extract cnn feature
-        # print(img_seq_var.size())
-        cnn_feat_var = extractor_model(img_seq_var)
-        cnn_feat_var = cnn_feat_var.view((bs, ts, -1, cnn_feat_var.size()[2]*cnn_feat_var.size()[3]))
-        cnn_feat_var = cnn_feat_var.permute(0, 1, 3, 2)
-        # print("cnn fetaure extractor")
-        # print(cnn_feat_var.size())          # (bs, ts, 36, 256)
-
         optimizer.zero_grad()
-        prediction = model(cnn_feat_var, gaze_seq_var)
+        # extract cnn feature
+        if extractor_model is not None:
+            cnn_feat_var = extractor_model(img_seq_var)
+            cnn_feat_var = cnn_feat_var.view((bs, ts, -1, cnn_feat_var.size()[2]*cnn_feat_var.size()[3]))
+            cnn_feat_var = cnn_feat_var.permute(0, 1, 3, 2)    # (bs, ts, 36, 256)
+            prediction = model(cnn_feat_var, gaze_seq_var)
+        else:
+            prediction = model(img_seq_var, gaze_seq_var)
         prediction = prediction.view((bs*ts, num_class))
 
         # print(target_seq_var)
@@ -120,15 +119,13 @@ def validate(val_data, extractor_model, model, criterion, epoch, logger, para,
         gaze_seq_var = gaze_seq_var.unsqueeze(0)        # no bs dim
 
         # extract cnn feature
-        # print(img_seq_var.size())
-        cnn_feat_var = extractor_model(img_seq_var)
-        # print(cnn_feat_var.size())
-        cnn_feat_var = cnn_feat_var.view((bs, ts, -1, cnn_feat_var.size()[2]*cnn_feat_var.size()[3]))
-        cnn_feat_var = cnn_feat_var.permute(0, 1, 3, 2)
-        # print("cnn fetaure extractor")
-        # print(cnn_feat_var.size())          # (bs, ts, 36, 256)
-
-        prediction = model(cnn_feat_var, gaze_seq_var)
+        if extractor_model is not None:
+            cnn_feat_var = extractor_model(img_seq_var)
+            cnn_feat_var = cnn_feat_var.view((bs, ts, -1, cnn_feat_var.size()[2]*cnn_feat_var.size()[3]))
+            cnn_feat_var = cnn_feat_var.permute(0, 1, 3, 2)    # (bs, ts, 36, 256)
+            prediction = model(cnn_feat_var, gaze_seq_var)
+        else:
+            prediction = model(img_seq_var, gaze_seq_var)
         prediction = prediction.view((bs*ts, num_class))
 
         # print(target_seq_var)
@@ -219,24 +216,33 @@ def main():
     dataset_path = '../../gaze-net/gaze_dataset'
     # dataset_path = '../../gaze-net/gaze_dataset'
     img_size = (224, 224)
+    extractor = True        # fine-tune the last two layers of feat_extractor or not
     log_path = '../log'
     logger = Logger(log_path, 'multiple')
 
     # define model
-    arch = 'alexnet'
-    extractor_model = FeatureExtractor(arch=arch)
-    extractor_model.features = torch.nn.DataParallel(extractor_model.features)
-    extractor_model.cuda()      # uncomment this line if using cpu
-    extractor_model.eval()
+    if extractor == False:
+        arch = 'alexnet'
+        extractor_model = FeatureExtractor(arch=arch)
+        extractor_model.features = torch.nn.DataParallel(extractor_model.features)
+        # extractor_model.cuda()      # uncomment this line if using cpu
+        extractor_model.eval()
+    else:
+        extractor_model = None
 
     model = MultipleAttentionModel(num_class, cnn_feat_size,
                         gaze_size, gaze_lstm_hidden_size, gaze_lstm_projected_size,
-                        temporal_projected_size, queue_size)
+                        temporal_projected_size, queue_size, extractor=extractor)
     model.cuda()
 
     # define loss and optimizer
     criterion = nn.CrossEntropyLoss().cuda()
-    optimizer = torch.optim.SGD(model.parameters(), learning_rate,
+    param_list = []
+    for i, param in enumerate(model.parameters()):
+        if param.requires_grad == True:
+            print(param.size())
+            param_list.append(param)
+    optimizer = torch.optim.SGD(param_list, learning_rate,
                                 momentum = momentum, weight_decay=weight_decay)
 
     # define generator
@@ -249,13 +255,6 @@ def main():
                 batch_size=batch_size, target_size= img_size, class_mode='sequence_pytorch',
                 time_skip=time_skip)
     # val_data = train_data
-
-    # img_seq: (ts,224,224,3), gaze_seq: (ts, 3), ouput: (ts, 6)
-    # [img_seq, gaze_seq], output = next(train_data)
-    # print("gaze data shape")
-    # print(img_seq.shape)
-    # print(gaze_seq.shape)
-    # print(output.shape)
 
     # start Training
     para = {'bs': batch_size, 'img_size': img_size, 'num_class': num_class,
