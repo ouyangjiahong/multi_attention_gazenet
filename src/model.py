@@ -32,7 +32,7 @@ class FeatureExtractor(nn.Module):
             pretrained_model = models.__dict__[self.arch](pretrained=True)
             pretrained_model = pretrained_model.features    # only keep the conv layers
             #TODO: change it back
-            pretrained_model = nn.Sequential(*list(pretrained_model.children())[:-1]) # remove the last maxpool
+            # pretrained_model = nn.Sequential(*list(pretrained_model.children())[:-1]) # remove the last maxpool
             print(pretrained_model)
         else:
             raise Exception("Please download the model to ~/.torch and change the params")
@@ -200,7 +200,7 @@ class SpatialAttentionModel(nn.Module):
         grid_side = int(np.sqrt(cnn_feat_seq.size()[2]))
         for i in range(num_frame):
             # calculate the weight
-            spatial_weight = self.spatial_attention_layer(self.gaze_lstm_hidden,
+            spatial_weight = self.spatial_attention_layer(self.gaze_lstm_hidden.squeeze(dim=0),
                                         cnn_feat_seq[:,i,:,:]) # (bs, 36)
             spatial_feat = cnn_feat_seq[:,i,:,:] * spatial_weight.unsqueeze(2)   # (bs, 256, 36)
             spatial_feat = spatial_feat.sum(1)      # (bs, 256)
@@ -218,11 +218,16 @@ class SpatialAttentionModel(nn.Module):
 
             # update the lstm, h: (bs, hidden_num) + f: (bs, 256)
             gaze = gaze_seq[:, i, :].unsqueeze(1)
+            # if i == 0:
+            #     gaze = gaze_seq[:, 0, :]
+            #     gaze = gaze.unsqueeze(1)
+            # else:
+            #     gaze = gaze_seq[:, :i, :]
             gaze_lstm_output, (self.gaze_lstm_hidden, self.gaze_lstm_cell) = self.gaze_lstm_layer(gaze,
                                             (self.gaze_lstm_hidden, self.gaze_lstm_cell))
 
             # concate lstm and feat for mlp, (bs, 256 + 64), self.gaze_lstm_hidden: (1,1,64)
-            feat_concat = torch.cat((spatial_feat, self.gaze_lstm_hidden.squeeze(dim=0)), dim=1)
+            feat_concat = torch.cat((spatial_feat, self.gaze_lstm_hidden[0]), dim=1)
 
             pred = self.mlp_layer(feat_concat)
             pred_all.append(pred.unsqueeze(0))
@@ -264,6 +269,7 @@ class MultipleAttentionModel(nn.Module):
         self.init_cell = self.init_gaze_lstm_cell()
         self.gaze_lstm_hidden = None
         self.gaze_lstm_cell = None
+        self.temporal_feat_counter = None
 
     def build_gaze_lstm(self):
         lstm = nn.LSTM(self.gaze_size, self.gaze_lstm_hidden_size, batch_first=True)
@@ -306,6 +312,9 @@ class MultipleAttentionModel(nn.Module):
         bs = cnn_feat_seq.size()[0]
         if restart == True or self.gaze_lstm_cell is None:
             self.init_gaze_lstm_state(gaze_seq)
+            self.temporal_feat_counter = torch.autograd.Variable(torch.zeros(bs, self.cnn_feat_size))
+            print('feat counter')
+            print(self.temporal_feat_counter.size())
 
         # start the loop for region weight
         pred_all = []
@@ -321,9 +330,11 @@ class MultipleAttentionModel(nn.Module):
             restart_tem = False
             if i == 0:
                 restart_tem = True
-            temporal_weight = self.temporal_attention_layer(self.gaze_lstm_hidden.squeeze(dim=0),
+            temporal_weight = (i+1) * self.temporal_attention_layer(self.gaze_lstm_hidden.squeeze(dim=0),
                                         spatial_feat, restart=restart_tem)      # (bs)
             temporal_feat = spatial_feat * temporal_weight      # (bs, 256)
+            self.temporal_feat_counter = torch.add(self.temporal_feat_counter, temporal_feat)
+            temporal_feat = self.temporal_feat_counter / (i+1)
 
             # update the lstm, h: (bs, hidden_num) + f: (bs, 256)
             gaze = gaze_seq[:, i, :].unsqueeze(1)
@@ -331,7 +342,7 @@ class MultipleAttentionModel(nn.Module):
                                             (self.gaze_lstm_hidden, self.gaze_lstm_cell))
 
             # concate lstm and feat for mlp, (bs, 256 + 64)
-            feat_concat = torch.cat((temporal_feat, self.gaze_lstm_hidden.squeeze(dim=0)), dim=1)
+            feat_concat = torch.cat((temporal_feat, self.gaze_lstm_hidden[0]), dim=1)
 
             pred = self.mlp_layer(feat_concat)
             pred_all.append(pred.unsqueeze(0))
