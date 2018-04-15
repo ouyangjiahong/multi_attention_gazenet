@@ -18,7 +18,7 @@ import matplotlib.pyplot as plt
 from model import FeatureExtractor, SpatialAttentionModel
 from util import *
 from logger import Logger
-import gazeWholeGenerator as gaze_gen
+# import gazeWholeGenerator as gaze_gen
 
 # for real-time prediction
 def predict(img_seq, gaze_seq, extractor_model, model, restart=False):
@@ -45,9 +45,9 @@ def predict(img_seq, gaze_seq, extractor_model, model, restart=False):
 
     # get output result
     prediction = F.softmax(prediction, dim=1)
-    _, prediction = torch.max(prediction.data, 1)       # (ts,)
-    print(prediction)
-    return prediction
+    _, label = torch.max(prediction.data, 1)       # (ts,)
+    print(label)
+    return label, prediction
 
 
 def main():
