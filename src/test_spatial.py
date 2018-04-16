@@ -11,6 +11,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.nn.parallel
 import numpy as np
+import cv2
 # from skimage.io import imsave
 import matplotlib.pyplot as plt
 # from skimage.transform import resize
@@ -18,21 +19,26 @@ import matplotlib.pyplot as plt
 from model import FeatureExtractor, SpatialAttentionModel
 from util import *
 from logger import Logger
-# import gazeWholeGenerator as gaze_gen
+import gazeWholeGenerator as gaze_gen
 
 # for real-time prediction
 def predict(img_seq, gaze_seq, extractor_model, model, restart=False):
     dim = len(img_seq.shape)
     if dim != 4:
-        raise ValueError("In prediction mode, the input images size should be (ts, 224, 224, 3)")
+        if dim != 3:
+            raise ValueError("In prediction mode, the input images size should be (ts, 224, 224, 3) or (224, 224, 3)")
+        else:
+            img_seq = np.expand_dims(img_seq, axis=0)
+            gaze_seq = np.expand_dims(gaze_seq, axis=0)
+
     ts = img_seq.shape[0]
     bs = 1
     img_size = (img_seq.shape[1], img_seq.shape[2])
 
     img_seq = normalize(img_seq)
     img_seq = np.reshape(img_seq, (bs*ts,3,) + img_size)
-    img_seq_var = torch.autograd.Variable(torch.Tensor(img_seq))
-    gaze_seq_var = torch.autograd.Variable(torch.Tensor(gaze_seq))
+    img_seq_var = torch.autograd.Variable(torch.Tensor(img_seq).cuda())
+    gaze_seq_var = torch.autograd.Variable(torch.Tensor(gaze_seq).cuda())
     gaze_seq_var = gaze_seq_var.unsqueeze(0)        # no bs dim
 
     # extract cnn feature
@@ -59,9 +65,10 @@ def main():
     gaze_size = 3
     gaze_lstm_hidden_size = 64
     gaze_lstm_projected_size = 128
-    dataset_path = '../data/gaze_dataset'
-    # dataset_path = '../../gaze-net/gaze_dataset'
+    # dataset_path = '../data/gaze_dataset'
+    dataset_path = '../../gaze-net/gaze_dataset'
     img_size = (224, 224)
+    time_skip = 2
 
     # define model
     arch = 'alexnet'
@@ -77,18 +84,36 @@ def main():
     # load model from checkpoint
     model = load_checkpoint(model)
 
-    # define generator, TODO: change with the new one
-    trainGenerator = gaze_gen.GazeDataGenerator(validation_split=0)
+
+    trainGenerator = gaze_gen.GazeDataGenerator(validation_split=0.2)
     train_data = trainGenerator.flow_from_directory(dataset_path, subset='training', crop=False,
-                    batch_size=batch_size, target_size= img_size, class_mode='sequence_pytorch')
+                    batch_size=batch_size, target_size= img_size, class_mode='sequence_pytorch',
+                    time_skip=time_skip)
+    # small dataset, error using validation split
+    val_data = trainGenerator.flow_from_directory(dataset_path, subset='validation', crop=False,
+                batch_size=batch_size, target_size= img_size, class_mode='sequence_pytorch',
+                time_skip=time_skip)
 
     # start predict
-    for i in range(3):
+    for i in range(10):
         print("start a new interaction")
         # img_seq: (ts,224,224,3), gaze_seq: (ts, 3), ouput: (ts, 6)
-        [img_seq, gaze_seq], _ = next(train_data)
-        predict(img_seq[:5], gaze_seq[:5], extractor_model, model, restart=True)
-        predict(img_seq[5:10], gaze_seq[5:10], extractor_model, model, restart=False)
+        # [img_seq, gaze_seq], target = next(val_data)
+        [img_seq, gaze_seq], target = next(train_data)
+        restart = True
+
+        predict(img_seq, gaze_seq, extractor_model, model, restart=restart)
+        print(target)
+        for j in range(img_seq.shape[0]):
+            # predict(img_seq[j], gaze_seq[j], None, model, restart=restart)
+            # print(target[j])
+            # restart = False
+            img = img_seq[j,:,:,:]
+            gazes = gaze_seq
+            cv2.circle(img, (int(gazes[j,1]), int(gazes[j,2])), 10, (255,0,0),-1)
+            cv2.imshow('ImageWindow', img)
+            cv2.waitKey(33)
+        # predict(img_seq[5:10], gaze_seq[5:10], extractor_model, model, restart=False)
 
 
 def load_checkpoint(model, filename='../model/spatial/checkpoint.pth.32.tar'):
