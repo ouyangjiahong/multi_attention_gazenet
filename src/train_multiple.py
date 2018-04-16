@@ -11,11 +11,11 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.nn.parallel
 import numpy as np
-from skimage.io import imsave         # shouldn't comment if using visualize
+# from skimage.io import imsave
 import matplotlib.pyplot as plt
 # from skimage.transform import resize
 
-from model import FeatureExtractor, SpatialAttentionModel
+from model import FeatureExtractor, SpatialAttentionModel, MultipleAttentionModel
 from util import *
 from logger import Logger
 import gazeWholeGenerator as gaze_gen
@@ -37,9 +37,9 @@ def train(train_data, extractor_model, model, criterion, optimizer, epoch, logge
     for i in range(train_num):
         # get data, img_seq: (ts,224,224,3), gaze_seq: (ts, 3), ouput: (ts, 6)
         [img_seq, gaze_seq], target_seq = next(train_data)
-        # img_seq = img_seq[:30]          # just for speed up
-        # gaze_seq = gaze_seq[:30]
-        # target_seq = target_seq[:30]
+        # img_seq = img_seq[:35]          # just for speed up
+        # gaze_seq = gaze_seq[:35]
+        # target_seq = target_seq[:35]
         ts = img_seq.shape[0]
 
         img_seq = normalize(img_seq)
@@ -49,17 +49,15 @@ def train(train_data, extractor_model, model, criterion, optimizer, epoch, logge
         target_seq_var = torch.autograd.Variable(torch.Tensor(target_seq).cuda()).long()
         gaze_seq_var = gaze_seq_var.unsqueeze(0)        # no bs dim
 
-        # extract cnn feature
-        # print(img_seq_var.size())
-        cnn_feat_var = extractor_model(img_seq_var)
-        # print(cnn_feat_var.size())
-        cnn_feat_var = cnn_feat_var.view((bs, ts, -1, cnn_feat_var.size()[2]*cnn_feat_var.size()[3]))
-        cnn_feat_var = cnn_feat_var.permute(0, 1, 3, 2)
-        # print("cnn fetaure extractor")
-        # print(cnn_feat_var.size())          # (bs, ts, 36, 256)
-
         optimizer.zero_grad()
-        prediction = model(cnn_feat_var, gaze_seq_var)
+        # extract cnn feature
+        if extractor_model is not None:
+            cnn_feat_var = extractor_model(img_seq_var)
+            cnn_feat_var = cnn_feat_var.view((bs, ts, -1, cnn_feat_var.size()[2]*cnn_feat_var.size()[3]))
+            cnn_feat_var = cnn_feat_var.permute(0, 1, 3, 2)    # (bs, ts, 36, 256)
+            prediction = model(cnn_feat_var, gaze_seq_var)
+        else:
+            prediction = model(img_seq_var, gaze_seq_var)
         prediction = prediction.view((bs*ts, num_class))
 
         # print(target_seq_var)
@@ -121,15 +119,13 @@ def validate(val_data, extractor_model, model, criterion, epoch, logger, para,
         gaze_seq_var = gaze_seq_var.unsqueeze(0)        # no bs dim
 
         # extract cnn feature
-        # print(img_seq_var.size())
-        cnn_feat_var = extractor_model(img_seq_var)
-        # print(cnn_feat_var.size())
-        cnn_feat_var = cnn_feat_var.view((bs, ts, -1, cnn_feat_var.size()[2]*cnn_feat_var.size()[3]))
-        cnn_feat_var = cnn_feat_var.permute(0, 1, 3, 2)
-        # print("cnn fetaure extractor")
-        # print(cnn_feat_var.size())          # (bs, ts, 36, 256)
-
-        prediction = model(cnn_feat_var, gaze_seq_var)
+        if extractor_model is not None:
+            cnn_feat_var = extractor_model(img_seq_var)
+            cnn_feat_var = cnn_feat_var.view((bs, ts, -1, cnn_feat_var.size()[2]*cnn_feat_var.size()[3]))
+            cnn_feat_var = cnn_feat_var.permute(0, 1, 3, 2)    # (bs, ts, 36, 256)
+            prediction = model(cnn_feat_var, gaze_seq_var)
+        else:
+            prediction = model(img_seq_var, gaze_seq_var)
         prediction = prediction.view((bs*ts, num_class))
 
         # print(target_seq_var)
@@ -167,6 +163,7 @@ def validate(val_data, extractor_model, model, criterion, epoch, logger, para,
     logger.scalar_summary('val/acc', acc_avg, epoch)
     return acc_avg
 
+
 def visualization(iter, acc_cur, img_seq, gaze_seq, target_seq_var, prediction, vis_data_path):
     subdir_path = vis_data_path + str(iter) + '_' + str('%.3f'%acc_cur) + '/'
     print(subdir_path)
@@ -184,83 +181,80 @@ def visualization(iter, acc_cur, img_seq, gaze_seq, target_seq_var, prediction, 
         img = img_seq[i,:,:,:]
         gaze = gaze_seq[i,:]
 
-        x = gaze[1]*224.0/640           # don't need this if using modified_gaze_sequence_correct
-        y = (360 - gaze[2])*224.0/360
+        x = img.shape[1] * gaze[1]
+        y = img.shape[0] * (1 - gaze[2])
         left = int(max(0, x-5))
         right = int(min(x+5, img.shape[1]-1))
         above = int(max(0, y-5))
         bottom = int(min(y+5, img.shape[0]-1))
         img[above:bottom, left:right, 0] = 0
-        img[above:bottom, left:right, 1] = 0
-        img[above:bottom, left:right, 2] = 255
+        img[above:bottom, left:right, 1] = 	0
+        img[above:bottom, left:right, 2] = 	1
 
-        img_path = subdir_path + str('%03d'%i) + '_' + str(target) + \
+        img_path = subdir_path + str('%3d'%i) + '_' + str(target) + \
                     '_' + str(predict) + '.jpg'
         # imsave(img_path, img)
 
 def main():
     # define parameters
     TRAIN = True
+    time_skip = 2
     num_class = 6
     batch_size = 1
-    # time_step = 32
     epochs = 50
     cnn_feat_size = 256     # AlexNet
     gaze_size = 3
     gaze_lstm_hidden_size = 64
     gaze_lstm_projected_size = 128
+    temporal_projected_size = 128
+    queue_size = 32
     learning_rate = 0.0001
     momentum = 0.9
     weight_decay = 1e-4
     eval_freq = 1       # epoch
     print_freq = 1      # iteration
-    # dataset_path = '../data/gaze_dataset'
     dataset_path = '../../gaze-net/gaze_dataset'
+    # dataset_path = '../../gaze-net/gaze_dataset'
     img_size = (224, 224)
+    extractor = True        # fine-tune the last two layers of feat_extractor or not
     log_path = '../log'
-    logger = Logger(log_path, 'spatial')
+    logger = Logger(log_path, 'multiple')
 
     # define model
-    arch = 'alexnet'
-    extractor_model = FeatureExtractor(arch=arch)
-    extractor_model.features = torch.nn.DataParallel(extractor_model.features)
-    extractor_model.cuda()      # uncomment this line if using cpu
-    extractor_model.eval()
+    if extractor == False:
+        arch = 'alexnet'
+        extractor_model = FeatureExtractor(arch=arch)
+        extractor_model.features = torch.nn.DataParallel(extractor_model.features)
+        # extractor_model.cuda()      # uncomment this line if using cpu
+        extractor_model.eval()
+    else:
+        extractor_model = None
 
-    model = SpatialAttentionModel(num_class, cnn_feat_size,
-                        gaze_size, gaze_lstm_hidden_size, gaze_lstm_projected_size)
+    model = MultipleAttentionModel(num_class, cnn_feat_size,
+                        gaze_size, gaze_lstm_hidden_size, gaze_lstm_projected_size,
+                        temporal_projected_size, queue_size, extractor=extractor)
     model.cuda()
 
     # define loss and optimizer
-    # criterion = nn.CrossEntropyLoss()
     criterion = nn.CrossEntropyLoss().cuda()
-    optimizer = torch.optim.SGD(model.parameters(), learning_rate,
+    param_list = []
+    for i, param in enumerate(model.parameters()):
+        if param.requires_grad == True:
+            print(param.size())
+            param_list.append(param)
+    optimizer = torch.optim.SGD(param_list, learning_rate,
                                 momentum = momentum, weight_decay=weight_decay)
 
     # define generator
     trainGenerator = gaze_gen.GazeDataGenerator(validation_split=0.2)
     train_data = trainGenerator.flow_from_directory(dataset_path, subset='training', crop=False,
-                    batch_size=batch_size, target_size= img_size, class_mode='sequence_pytorch')
+                    batch_size=batch_size, target_size= img_size, class_mode='sequence_pytorch',
+                    time_skip=time_skip)
     # small dataset, error using validation split
     val_data = trainGenerator.flow_from_directory(dataset_path, subset='validation', crop=False,
-                batch_size=batch_size, target_size= img_size, class_mode='sequence_pytorch')
+                batch_size=batch_size, target_size= img_size, class_mode='sequence_pytorch',
+                time_skip=time_skip)
     # val_data = train_data
-
-    def test(train_data):
-        [img_seq, gaze_seq], target = next(train_data)
-        img = img_seq[100,:,:,:]
-        img_gamma = adjust_contrast(img)
-        imsave('contrast.jpg', img_gamma)
-        imsave('original.jpg', img)
-
-    # test(train_data)
-    print("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
-    # img_seq: (ts,224,224,3), gaze_seq: (ts, 3), ouput: (ts, 6)
-    # [img_seq, gaze_seq], output = next(train_data)
-    # print("gaze data shape")
-    # print(img_seq.shape)
-    # print(gaze_seq.shape)
-    # print(output.shape)
 
     # start Training
     para = {'bs': batch_size, 'img_size': img_size, 'num_class': num_class,
@@ -268,7 +262,7 @@ def main():
     if TRAIN:
         print("get into training mode")
         best_acc = 0
-
+        # acc = validate(val_data, extractor_model, model, criterion, 0, logger, para, False)
         for epoch in range(epochs):
             adjust_learning_rate(optimizer, epoch, learning_rate)
             print('Epoch: {}'.format(epoch))
@@ -295,7 +289,7 @@ def main():
         if not os.path.exists(vis_data_path):
             os.makedirs(vis_data_path)
         acc = validate(train_data, extractor_model, model, criterion, -1, \
-                        logger, para, False, vis_data_path)
+                        logger, para, True, vis_data_path)
         print("visualization for validation data")
         vis_data_path = '../vis/val/'
         if not os.path.exists(vis_data_path):
@@ -309,13 +303,13 @@ def adjust_learning_rate(optimizer, epoch, learning_rate):
     for param_group in optimizer.param_groups:
         param_group['lr'] = lr
 
-def save_checkpoint(state, is_best, filename='../model/spatial/checkpoint.pth.tar'):
+def save_checkpoint(state, is_best, filename='../model/multiple/checkpoint.pth.tar'):
     print("save checkpoint")
     torch.save(state, filename)
     if is_best:
-        shutil.copyfile(filename, '../model/spatial/model_best.pth.tar')
+        shutil.copyfile(filename, '../model/multiple/model_best.pth.tar')
 
-def load_checkpoint(model, filename='../model/spatial/model_best.pth.tar'):
+def load_checkpoint(model, filename='../model/multiple/checkpoint.pth.32.tar'):
     if os.path.isfile(filename):
             checkpoint = torch.load(filename)
             epoch = checkpoint['epoch']
