@@ -51,9 +51,11 @@ def predict(img_seq, gaze_seq, extractor_model, model, restart=False):
 
     # get output result
     prediction = F.softmax(prediction, dim=1)
+
     _, label = torch.max(prediction.data, 1)       # (ts,)
     print(label)
     return label, prediction
+
 
 
 def main():
