@@ -18,7 +18,7 @@ import matplotlib.pyplot as plt
 from model import FeatureExtractor, SpatialAttentionModel
 from util import *
 from logger import Logger
-import gazeWholeGenerator as gaze_gen
+# import gazeWholeGenerator as gaze_gen
 
 # for real-time prediction
 def predict(img_seq, gaze_seq, extractor_model, model, restart=False):
@@ -31,8 +31,8 @@ def predict(img_seq, gaze_seq, extractor_model, model, restart=False):
 
     img_seq = normalize(img_seq)
     img_seq = np.reshape(img_seq, (bs*ts,3,) + img_size)
-    img_seq_var = torch.autograd.Variable(torch.Tensor(img_seq))
-    gaze_seq_var = torch.autograd.Variable(torch.Tensor(gaze_seq))
+    img_seq_var = torch.autograd.Variable(torch.Tensor(img_seq).cuda())
+    gaze_seq_var = torch.autograd.Variable(torch.Tensor(gaze_seq).cuda())
     gaze_seq_var = gaze_seq_var.unsqueeze(0)        # no bs dim
 
     # extract cnn feature
@@ -46,7 +46,7 @@ def predict(img_seq, gaze_seq, extractor_model, model, restart=False):
     # get output result
     prediction = F.softmax(prediction, dim=1)
     _, prediction = torch.max(prediction.data, 1)       # (ts,)
-    print(prediction)
+    # print(prediction)
     return prediction
 
 
