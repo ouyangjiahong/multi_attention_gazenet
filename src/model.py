@@ -12,6 +12,37 @@ import numpy as np
 # from skimage.io import imsave
 # from skimage.transform import resize
 
+class GazeOnlyModel(nn.Module):
+    '''
+    gaze only model, without image features
+    '''
+    def __init__(self, num_class, gaze_size, gaze_lstm_hidden_size):
+        super(GazeOnlyModel, self).__init__()
+        self.gaze_size = gaze_size
+        self.gaze_lstm_hidden_size = gaze_lstm_hidden_size
+        self.num_class = num_class
+        self.lstm = self.build_lstm()
+        self.classifier = self.build_classifier()
+
+    def build_lstm(self):
+        return nn.LSTM(self.gaze_size, self.gaze_lstm_hidden_size, num_layers=2,
+                        batch_first=True)
+
+    def build_classifier(self):
+        return nn.Linear(self.gaze_lstm_hidden_size, self.num_class)
+
+    def forward(self, gaze_seq):
+        # (bs, ts, 3)
+        num_frame = gaze_seq.size()[1]
+        bs = gaze_seq.size()[0]
+
+        # start the loop for region weight
+        gaze_lstm_output, (_, _) = self.lstm(gaze_seq)
+        # print(gaze_lstm_output.size())      # (bs, ts, hidden)
+        output = self.classifier(gaze_lstm_output)
+        # print(output.size())            # (bs, ts, num_class)
+        return output
+
 
 class FeatureExtractor(nn.Module):
     '''
