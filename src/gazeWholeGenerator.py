@@ -351,6 +351,7 @@ class GazeDataGenerator(object):
                             time_steps=500,
                             time_skip=1,
                             crop=True,
+                            only_gaze=False,
                             gaussian_std=0.01,
                             target_size=(256, 256), color_mode='rgb',
                             crop_with_gaze=False, crop_with_gaze_size=128,
@@ -368,6 +369,7 @@ class GazeDataGenerator(object):
             time_steps=time_steps,
             time_skip=time_skip,
             crop=crop,
+            only_gaze=only_gaze,
             gaussian_std=gaussian_std,
             target_size=target_size, color_mode=color_mode,
             crop_with_gaze=crop_with_gaze, crop_with_gaze_size=crop_with_gaze_size,
@@ -945,6 +947,7 @@ class DirectoryIterator(Iterator):
                  time_skip=1,
                  time_steps=500,
                  crop=True,
+                 only_gaze=False,
                  gaussian_std=0.01,
                  target_size=(360, 360), color_mode='rgb',
                  crop_with_gaze=False, crop_with_gaze_size=128,
@@ -994,6 +997,7 @@ class DirectoryIterator(Iterator):
         self.gaussian_std = gaussian_std
         self.crop_with_gaze = crop_with_gaze
         self.crop_with_gaze_size = crop_with_gaze_size
+        self.only_gaze = only_gaze
 
         if subset is not None:
             validation_split = self.image_data_generator._validation_split
@@ -1166,6 +1170,7 @@ class DirectoryIterator(Iterator):
             batch_y = np.zeros((len(label_sequence), self.num_classes+1), dtype=K.floatx())
             for i, label in enumerate(label_sequence):
                 batch_y[i, int(label[0])] = 1
+        # elif self.class_mode == 'binary_sequence':
         elif self.class_mode == 'sequence_pytorch':
             batch_y = np.squeeze(label_sequence, axis=1)
         else:
@@ -1173,6 +1178,9 @@ class DirectoryIterator(Iterator):
         # print("before return")
         if self.crop_with_gaze == True:
             return images_x, batch_y
+        elif self.only_gaze:
+            batch_y = np.array([np.where(r==1)[0][0] for r in batch_y])
+            return gaze_x, (batch_y>0).astype(np.float)
         else:
             return [images_x, gaze_x], batch_y
 
